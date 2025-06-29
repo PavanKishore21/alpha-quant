@@ -1,0 +1,35 @@
+# render.yaml - Render service configuration
+services:
+  - type: web
+    name: alpha-quant
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 1 --worker-class sync --worker-connections 100 --max-requests 50 --max-requests-jitter 10 --preload --timeout 30 --keep-alive 2 --worker-tmp-dir /dev/shm main:app"
+    plan: starter
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: NUMEXPR_MAX_THREADS
+        value: "1"
+      - key: MALLOC_TRIM_THRESHOLD_
+        value: "100000"
+
+---
+
+# Alternative gunicorn.conf.py for more control
+bind = "0.0.0.0:8000"
+workers = 1
+threads = 1
+worker_class = "sync"
+worker_connections = 100
+max_requests = 50
+max_requests_jitter = 10
+preload_app = True
+timeout = 30
+keepalive = 2
+worker_tmp_dir = "/dev/shm"
+max_worker_memory = 400000  # 400MB limit per worker
