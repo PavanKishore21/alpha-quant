@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import warnings
 import traceback
 import yfinance as yf
-from joblib import Parallel, delayed
 from functools import lru_cache
 import gc
 import os
@@ -141,19 +140,31 @@ class OptimizedMLRankingSystem:
             self.is_trained = False
             return False
 
-        feature_list = [
-            self.get_features_for_stock(train_price_data[stock]) for stock in stock_universe
-        ]
-
         X_list, y_list = [], []
         targets = train_price_data.pct_change(21).shift(-21)
+        
+        # --- OPTIMIZATION: Process stocks sequentially to save memory ---
+        for stock in stock_universe:
+            if stock not in train_price_data.columns or stock not in targets.columns:
+                continue
 
-        for i, stock in enumerate(stock_universe):
-            if i >= len(feature_list) or feature_list[i].empty or stock not in targets.columns: continue
-            full_data = feature_list[i].join(targets[stock].rename('target')).dropna()
+            features = self.get_features_for_stock(train_price_data[stock])
+            if features.empty:
+                continue
+
+            full_data = features.join(targets[stock].rename('target')).dropna()
+            
+            # --- OPTIMIZATION: Sample data per stock to prevent large lists ---
+            if len(full_data) > 500: # If a stock has a very long history
+                full_data = full_data.sample(n=500, random_state=42)
+            
             if not full_data.empty:
                 X_list.append(full_data.drop('target', axis=1))
                 y_list.append(full_data['target'])
+            
+            # Clean up memory after processing each stock
+            del features, full_data
+            gc.collect()
         
         if not y_list or not X_list:
             self.is_trained = False
@@ -161,8 +172,9 @@ class OptimizedMLRankingSystem:
 
         X, y = pd.concat(X_list), pd.concat(y_list)
         
-        if len(X) > 15000:
-            sample_indices = np.random.choice(X.index, 15000, replace=False)
+        # Cap total training samples as a final safety measure
+        if len(X) > 20000:
+            sample_indices = np.random.choice(X.index, 20000, replace=False)
             X = X.loc[sample_indices]
             y = y.loc[sample_indices]
         
@@ -170,7 +182,6 @@ class OptimizedMLRankingSystem:
         
         X_scaled = self.scaler.fit_transform(X)
         X_selected = self.selector.fit_transform(X_scaled, y)
-        
         self.ridge.fit(X_selected, y)
         
         selected_feature_indices = self.selector.get_support(indices=True)
@@ -183,26 +194,19 @@ class OptimizedMLRankingSystem:
         return True
 
     def predict_returns(self, price_data, stocks, as_of_date):
-        if not self.is_trained: 
-            return {}
-        
+        if not self.is_trained: return {}
         predictions = {}
         for stock in stocks:
             try:
-                recent_prices = price_data[stock].loc[as_of_date - timedelta(days=90):as_of_date]
+                recent_prices = price_data.loc[as_of_date - timedelta(days=90):as_of_date, stock]
                 if recent_prices.empty: continue
-                
                 features = self.get_features_for_stock(recent_prices)
                 if features.empty or as_of_date not in features.index: continue
-                
                 feature_vector = features.loc[as_of_date].values.reshape(1, -1)
                 if np.isnan(feature_vector).any(): continue
-
                 feature_vector_scaled = self.scaler.transform(feature_vector)
                 feature_vector_selected = self.selector.transform(feature_vector_scaled)
-                
                 predictions[stock] = self.ridge.predict(feature_vector_selected)[0]
-                
             except Exception:
                 continue
         return predictions
@@ -238,14 +242,11 @@ class AdvancedTradingStrategy:
         rebalance_dates = pd.date_range(start=price_data_backtest.index.min(), end=price_data_backtest.index.max(), freq=f'{self.rebalance_frequency}B')
         valid_rebalance_dates = price_data.index.unique()[price_data.index.unique().searchsorted(rebalance_dates)]
         
-        if len(valid_rebalance_dates) < 2: 
-            return {'error': 'Backtest period too short for rebalancing.'}
+        if len(valid_rebalance_dates) < 2: return {'error': 'Backtest period too short for rebalancing.'}
 
         all_daily_returns = pd.Series(0.0, index=price_data_backtest.index)
         stock_returns = price_data_backtest.pct_change()
-        last_weights = {}
-        portfolio_compositions = []
-        trade_log = []
+        last_weights, portfolio_compositions, trade_log = {}, [], []
         
         for i in range(len(valid_rebalance_dates) - 1):
             rebalance_date = valid_rebalance_dates[i]
@@ -258,44 +259,28 @@ class AdvancedTradingStrategy:
             rolling_returns = ranking_data.pct_change().rolling(self.sharpe_lookback)
             sharpe_scores = ((rolling_returns.mean() * np.sqrt(252)) / (rolling_returns.std() * np.sqrt(252) + 1e-6)).iloc[-1]
             
-            # --- FIX: More robust two-step ranking logic ---
-            # 1. First, select candidates based on positive Sharpe ratio and ATH
             ath_filter = ranking_data.iloc[-252:].max() <= ranking_data.iloc[-1]
             ath_stocks = ath_filter[ath_filter].index.tolist()
             
-            positive_sharpe_stocks = [
-                stock for stock, score in sharpe_scores.items() 
-                if score > 0 and stock in ath_stocks
-            ]
+            positive_sharpe_stocks = [stock for stock, score in sharpe_scores.items() if score > 0 and stock in ath_stocks]
             
             final_scores = sharpe_scores.copy().to_dict()
-
-            # 2. Then, refine the scores of these good candidates with the ML model
             if self.ml_ranker.is_trained:
                 ml_scores = self.ml_ranker.predict_returns(price_data, positive_sharpe_stocks, rebalance_date)
                 for stock, ml_score in ml_scores.items():
                     if stock in final_scores and pd.notna(final_scores.get(stock)) and pd.notna(ml_score):
                         final_scores[stock] = (0.6 * final_scores[stock]) + (0.4 * ml_score)
             
-            # Rank the final candidates
-            ranked_stocks = sorted(
-                positive_sharpe_stocks, 
-                key=lambda s: final_scores.get(s, -np.inf), 
-                reverse=True
-            )
-
+            ranked_stocks = sorted(positive_sharpe_stocks, key=lambda s: final_scores.get(s, -np.inf), reverse=True)
+            
             selected = ranked_stocks[:self.max_stocks]
             weights_dict = self.risk_manager.calculate_optimal_weights(selected, final_scores, price_data.loc[:rebalance_date])
 
-            if not weights_dict:
-                final_stocks, weights_arr = [], []
-            else:
-                final_stocks = list(weights_dict.keys())
-                weights_arr = list(weights_dict.values())
+            final_stocks = list(weights_dict.keys())
+            weights_arr = list(weights_dict.values())
             
             current_weights = dict(zip(final_stocks, weights_arr))
-            formatted_weights = [(stock, round(weight, 4)) for stock, weight in current_weights.items()]
-            portfolio_compositions.append({'date': rebalance_date.strftime('%Y-%m-%d'), 'stocks': formatted_weights})
+            portfolio_compositions.append({'date': rebalance_date.strftime('%Y-%m-%d'), 'stocks': list(current_weights.items())})
             
             turnover = sum(abs(current_weights.get(s, 0) - last_weights.get(s, 0)) for s in set(current_weights) | set(last_weights))
             costs = turnover * (transaction_cost_bps / 10000.0)
