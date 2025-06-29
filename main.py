@@ -19,7 +19,7 @@ from sklearn.feature_selection import SelectKBest, f_regression
 # Web framework
 from flask import Flask, render_template, request, jsonify
 
-# --- Technical Indicator Calculation with Caching ---
+# --- Technical Indicator Calculation with Caching (Unchanged) ---
 @lru_cache(maxsize=1024)
 def calculate_rsi(prices_tuple, period=14):
     prices = pd.Series(prices_tuple, dtype=float)
@@ -45,88 +45,73 @@ def calculate_bb_width(prices_tuple, period=20):
     std = prices.rolling(window=period).std()
     return ((sma + 2 * std) - (sma - 2 * std)) / sma.replace(0, 1)
 
-# Advanced Risk Manager ---
+# --- Advanced Risk Manager (Unchanged) ---
 class AdvancedRiskManager:
-    """
-    Calculates portfolio weights based on volatility, correlation, and model confidence.
-    This addresses the key problems of equal weighting, lack of diversification, and
-    not using the model's prediction strength.
-    """
     def __init__(self, lookback_period=63):
-        """
-        Args:
-            lookback_period (int): Number of trading days to calculate volatility and correlation (e.g., 63 ≈ 3 months).
-        """
         self.lookback_period = lookback_period
 
     def calculate_optimal_weights(self, selected_stocks, ml_scores, price_data):
         if not selected_stocks:
             return {}
 
-        # 1. Isolate the relevant historical data for our calculations
-        lookback_start = price_data.index.max() - pd.DateOffset(days=self.lookback_period * 2) # Get enough data
+        lookback_start = price_data.index.max() - pd.DateOffset(days=self.lookback_period * 2)
         recent_prices = price_data.loc[lookback_start:, selected_stocks].tail(self.lookback_period)
         
         if len(recent_prices) < self.lookback_period - 5 or recent_prices.isnull().values.any():
-             # Fallback to equal weight if data is insufficient
             num_stocks = len(selected_stocks)
             equal_weights = [1/num_stocks] * num_stocks
             return dict(zip(selected_stocks, equal_weights))
             
         daily_returns = recent_prices.pct_change().dropna()
+        if daily_returns.empty:
+            num_stocks = len(selected_stocks)
+            equal_weights = [1/num_stocks] * num_stocks
+            return dict(zip(selected_stocks, equal_weights))
 
-        # 2. Calculate confidence-adjusted inverse volatility weights
-        # Higher ML score = more weight, Lower volatility = more weight
         volatility = daily_returns.std()
         
-        # Build a metrics dataframe
         metrics = pd.DataFrame(index=selected_stocks)
         metrics['ml_score'] = pd.Series(ml_scores)
         metrics['volatility'] = volatility
-        metrics = metrics.dropna() # Drop any stocks missing data
+        metrics = metrics.dropna()
 
-        # Avoid division by zero
         metrics['volatility'].replace(0, np.nan, inplace=True)
         metrics.dropna(inplace=True)
         if metrics.empty: return {}
 
-        # The core logic: weight is proportional to score and inversely proportional to volatility
         metrics['base_weight'] = metrics['ml_score'] / metrics['volatility']
-        
-        # We only want to invest in stocks with a positive expected return (score)
         metrics['base_weight'] = metrics['base_weight'].clip(lower=0)
         
-        # 3. Apply a correlation penalty
-        # Penalize stocks that are highly correlated with the rest of the portfolio
-        corr_matrix = daily_returns[metrics.index].corr()
+        # Check if there are at least 2 stocks to calculate correlation
+        if len(metrics.index) < 2:
+            if not metrics.empty:
+                # If only one stock, it gets 100% weight
+                return {metrics.index[0]: 1.0}
+            else:
+                return {}
         
-        # Calculate the average correlation of each stock with all others
-        # Subtract 1 (self-correlation) and normalize
+        corr_matrix = daily_returns[metrics.index].corr()
         avg_correlation = (corr_matrix.sum() - 1) / (len(corr_matrix) - 1)
         
-        metrics['correlation_penalty'] = (1 - avg_correlation).clip(lower=0) # Cannot be negative
-        
-        # 4. Calculate Final Weights and Normalize
+        metrics['correlation_penalty'] = (1 - avg_correlation).clip(lower=0)
         metrics['final_weight'] = metrics['base_weight'] * metrics['correlation_penalty']
         
-        # Normalize weights to sum to 1
         total_weight = metrics['final_weight'].sum()
         if total_weight == 0:
-            # Fallback for the edge case where all weights are zero
             num_stocks = len(metrics.index)
             if num_stocks == 0: return {}
             equal_weights = [1/num_stocks] * num_stocks
             return dict(zip(metrics.index, equal_weights))
 
         final_weights = metrics['final_weight'] / total_weight
-        
         return final_weights.to_dict()
 
 
 class OptimizedMLRankingSystem:
     def __init__(self):
         self.ridge = Ridge(alpha=1.0)
-        self.mlp = MLPRegressor(hidden_layer_sizes=(32,), max_iter=100, early_stopping=True, random_state=42)
+        # --- CHANGE: Reduced max_iter to prevent timeouts on free hosting tiers ---
+        self.mlp = MLPRegressor(hidden_layer_sizes=(32,), max_iter=50, early_stopping=True, random_state=42)
         self.scaler = StandardScaler()
         self.selector = SelectKBest(f_regression, k=6)
         self.is_trained = False
@@ -221,9 +206,8 @@ class AdvancedTradingStrategy:
         stock_universe = selected_stocks if (selected_stocks and len(selected_stocks) > 0) else self.default_stock_universe
         
         print("Fetching market data...")
-        # Fetch a longer history to ensure lookback periods for risk manager are met
         backtest_start_dt = pd.to_datetime(start_date)
-        fetch_start_date = backtest_start_dt - pd.DateOffset(days=365)
+        fetch_start_date = backtest_start_dt - pd.DateOffset(days=750) # Increased lookback for training
         
         price_data = yf.download(tickers=stock_universe, start=fetch_start_date, end=end_date, progress=False)['Close']
         price_data = price_data.dropna(axis=1, how='all').ffill().bfill()
@@ -231,7 +215,6 @@ class AdvancedTradingStrategy:
 
         benchmark_prices = yf.download('^NSEI', start=fetch_start_date, end=end_date, progress=False)['Close'].ffill()
         
-        # Trim data to the actual backtest period for performance calculation
         price_data_backtest = price_data.loc[start_date:end_date]
         bench_daily_returns = benchmark_prices.reindex(price_data_backtest.index).ffill().pct_change().fillna(0)
         
@@ -240,7 +223,6 @@ class AdvancedTradingStrategy:
         if len(valid_rebalance_dates) < 2: return {'error': 'Backtest period too short for rebalancing.'}
 
         all_daily_returns = pd.Series(0.0, index=price_data_backtest.index)
-        portfolio_compositions, trade_log = [], []
         stock_returns, last_weights = price_data_backtest.pct_change(), {}
         
         for i in range(len(valid_rebalance_dates) - 1):
@@ -258,16 +240,14 @@ class AdvancedTradingStrategy:
             if self.ml_ranker.is_trained:
                 ml_scores = self.ml_ranker.predict_returns(price_data, stock_universe, rebalance_date)
                 for stock, ml_score in ml_scores.items():
-                    if stock in final_scores and pd.notna(final_scores[stock]):
+                    if stock in final_scores and pd.notna(final_scores.get(stock)):
                         final_scores[stock] = 0.6 * final_scores[stock] + 0.4 * ml_score
 
             ath_filter = ranking_data.iloc[-252:].max() <= ranking_data.iloc[-1]
             ath_stocks = ath_filter[ath_filter].index.tolist()
-            ranked_stocks = sorted([s for s in ath_stocks if s in final_scores and pd.notna(final_scores[s])], key=lambda s: final_scores[s], reverse=True)
+            ranked_stocks = sorted([s for s in ath_stocks if s in final_scores and pd.notna(final_scores.get(s))], key=lambda s: final_scores[s], reverse=True)
             
             selected = ranked_stocks[:self.max_stocks]
-
-            # Use the risk manager to get intelligent weights ---
             weights_dict = self.risk_manager.calculate_optimal_weights(selected, final_scores, price_data.loc[:rebalance_date])
 
             if not weights_dict:
@@ -275,10 +255,8 @@ class AdvancedTradingStrategy:
             else:
                 final_stocks = list(weights_dict.keys())
                 weights_arr = list(weights_dict.values())
-
             
             current_weights = dict(zip(final_stocks, weights_arr))
-            # Format weights for JSON output
             formatted_weights = [(stock, round(weight, 4)) for stock, weight in current_weights.items()]
             portfolio_compositions.append({'date': rebalance_date.strftime('%Y-%m-%d'), 'stocks': formatted_weights})
             
@@ -289,8 +267,9 @@ class AdvancedTradingStrategy:
             if period_mask.any() and final_stocks:
                 period_returns = stock_returns.loc[period_mask, final_stocks].fillna(0)
                 daily_portfolio_returns = period_returns.dot(weights_arr)
-                daily_portfolio_returns.iloc[0] -= costs 
-                all_daily_returns.loc[period_mask] = daily_portfolio_returns
+                if not daily_portfolio_returns.empty:
+                    daily_portfolio_returns.iloc[0] -= costs 
+                    all_daily_returns.loc[period_mask] = daily_portfolio_returns
                 
                 period_return_pct = (price_data.loc[next_rebalance_date] / price_data.loc[rebalance_date] - 1)
                 for stock in final_stocks:
@@ -298,27 +277,36 @@ class AdvancedTradingStrategy:
             
             last_weights = current_weights
 
-        # --- FINAL METRICS CALCULATION ---
+        # --- FINAL METRICS CALCULATION (Unchanged) ---
         portfolio_returns = (1 + all_daily_returns).cumprod()
         benchmark_returns_obj = (1 + bench_daily_returns).cumprod()
-        benchmark_returns = benchmark_returns_obj.iloc[:, 0] if isinstance(benchmark_returns_obj, pd.DataFrame) else benchmark_returns_obj
         
-        total_return, benchmark_total_return = portfolio_returns.iloc[-1] - 1, benchmark_returns.iloc[-1] - 1
+        # Handle cases where benchmark_returns_obj might be a Series
+        if isinstance(benchmark_returns_obj, pd.DataFrame):
+            benchmark_returns = benchmark_returns_obj.iloc[:, 0] if not benchmark_returns_obj.empty else pd.Series(1, index=portfolio_returns.index)
+        else:
+             benchmark_returns = benchmark_returns_obj if not benchmark_returns_obj.empty else pd.Series(1, index=portfolio_returns.index)
+
+        
+        total_return, benchmark_total_return = (portfolio_returns.iloc[-1] - 1) if not portfolio_returns.empty else 0, (benchmark_returns.iloc[-1] - 1) if not benchmark_returns.empty else 0
         daily_returns = portfolio_returns.pct_change().fillna(0)
         daily_bench_returns = benchmark_returns.pct_change().fillna(0)
         
-        X = daily_bench_returns.values.reshape(-1, 1)
-        y = daily_returns.values
-        lin_reg = LinearRegression().fit(X, y)
-        beta = lin_reg.coef_[0]
-        alpha = (y.mean() - beta * X.mean()) * 252
+        if len(daily_bench_returns) > 1 and len(daily_returns) > 1:
+            X = daily_bench_returns.values.reshape(-1, 1)
+            y = daily_returns.values
+            lin_reg = LinearRegression().fit(X, y)
+            beta = lin_reg.coef_[0]
+            alpha = (y.mean() - beta * X.mean()) * 252
+        else:
+            alpha, beta = 0.0, 0.0
 
         downside_returns = daily_returns[daily_returns < 0]
         downside_std = downside_returns.std() * np.sqrt(252)
-        sortino_ratio = (daily_returns.mean() * 252) / downside_std if downside_std > 0 else 0.0
-
-        max_drawdown = (portfolio_returns / portfolio_returns.expanding().max() - 1).min()
         annual_return = daily_returns.mean() * 252
+        sortino_ratio = annual_return / downside_std if downside_std > 0 else 0.0
+
+        max_drawdown = (portfolio_returns / portfolio_returns.expanding().max() - 1).min() if not portfolio_returns.empty else 0.0
         calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0.0
         
         return {
@@ -337,7 +325,9 @@ app = Flask(__name__)
 strategy = AdvancedTradingStrategy()
 
 @app.route('/')
-def index(): return render_template('index.html')
+def index():
+    with open('index.html', 'r') as f:
+        return f.read()
 
 NIFTY_50_STOCKS = ['ADANIENT.NS', 'ADANIPORTS.NS', 'APOLLOHOSP.NS', 'ASIANPAINT.NS', 'AXISBANK.NS', 'BAJAJ-AUTO.NS', 'BAJFINANCE.NS', 'BAJAJFINSV.NS', 'BPCL.NS', 'BHARTIARTL.NS', 'BRITANNIA.NS', 'CIPLA.NS', 'COALINDIA.NS', 'DIVISLAB.NS', 'DRREDDY.NS', 'EICHERMOT.NS', 'GRASIM.NS', 'HCLTECH.NS', 'HDFCBANK.NS', 'HDFCLIFE.NS', 'HEROMOTOCO.NS', 'HINDALCO.NS', 'HINDUNILVR.NS', 'ICICIBANK.NS', 'ITC.NS', 'INDUSINDBK.NS', 'INFY.NS', 'JSWSTEEL.NS', 'KOTAKBANK.NS', 'LTIM.NS', 'LT.NS', 'M&M.NS', 'MARUTI.NS', 'NTPC.NS', 'NESTLEIND.NS', 'ONGC.NS', 'POWERGRID.NS', 'RELIANCE.NS', 'SBILIFE.NS', 'SHREECEM.NS', 'SBIN.NS', 'SUNPHARMA.NS', 'TATAMOTORS.NS', 'TCS.NS', 'TATACONSUM.NS', 'TATASTEEL.NS', 'TECHM.NS', 'TITAN.NS', 'ULTRACEMCO.NS', 'WIPRO.NS']
 
@@ -374,6 +364,3 @@ def run_backtest_api():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5050)
