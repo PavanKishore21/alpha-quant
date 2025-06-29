@@ -1,14 +1,7 @@
-# Core build tools
-setuptools
-wheel
-pip
-
-# Essential packages only
-pandas
-numpy
-scikit-learn
 Flask
 gunicorn
-psutil
-requests
+pandas
+numpy
 yfinance
+scikit-learn
+joblib
