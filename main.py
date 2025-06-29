@@ -82,10 +82,8 @@ class AdvancedRiskManager:
         metrics['base_weight'] = metrics['ml_score'] / metrics['volatility']
         metrics['base_weight'] = metrics['base_weight'].clip(lower=0)
         
-        # Check if there are at least 2 stocks to calculate correlation
         if len(metrics.index) < 2:
             if not metrics.empty:
-                # If only one stock, it gets 100% weight
                 return {metrics.index[0]: 1.0}
             else:
                 return {}
@@ -110,7 +108,6 @@ class AdvancedRiskManager:
 class OptimizedMLRankingSystem:
     def __init__(self):
         self.ridge = Ridge(alpha=1.0)
-        # --- CHANGE: Reduced max_iter to prevent timeouts on free hosting tiers ---
         self.mlp = MLPRegressor(hidden_layer_sizes=(32,), max_iter=50, early_stopping=True, random_state=42)
         self.scaler = StandardScaler()
         self.selector = SelectKBest(f_regression, k=6)
@@ -207,7 +204,7 @@ class AdvancedTradingStrategy:
         
         print("Fetching market data...")
         backtest_start_dt = pd.to_datetime(start_date)
-        fetch_start_date = backtest_start_dt - pd.DateOffset(days=750) # Increased lookback for training
+        fetch_start_date = backtest_start_dt - pd.DateOffset(days=750)
         
         price_data = yf.download(tickers=stock_universe, start=fetch_start_date, end=end_date, progress=False)['Close']
         price_data = price_data.dropna(axis=1, how='all').ffill().bfill()
@@ -277,18 +274,16 @@ class AdvancedTradingStrategy:
             
             last_weights = current_weights
 
-        # --- FINAL METRICS CALCULATION (Unchanged) ---
         portfolio_returns = (1 + all_daily_returns).cumprod()
         benchmark_returns_obj = (1 + bench_daily_returns).cumprod()
         
-        # Handle cases where benchmark_returns_obj might be a Series
         if isinstance(benchmark_returns_obj, pd.DataFrame):
             benchmark_returns = benchmark_returns_obj.iloc[:, 0] if not benchmark_returns_obj.empty else pd.Series(1, index=portfolio_returns.index)
         else:
              benchmark_returns = benchmark_returns_obj if not benchmark_returns_obj.empty else pd.Series(1, index=portfolio_returns.index)
-
         
-        total_return, benchmark_total_return = (portfolio_returns.iloc[-1] - 1) if not portfolio_returns.empty else 0, (benchmark_returns.iloc[-1] - 1) if not benchmark_returns.empty else 0
+        total_return = (portfolio_returns.iloc[-1] - 1) if not portfolio_returns.empty else 0
+        benchmark_total_return = (benchmark_returns.iloc[-1] - 1) if not benchmark_returns.empty else 0
         daily_returns = portfolio_returns.pct_change().fillna(0)
         daily_bench_returns = benchmark_returns.pct_change().fillna(0)
         
@@ -320,14 +315,15 @@ class AdvancedTradingStrategy:
                 'max_drawdown': float(max_drawdown), 'annualized_volatility': float(daily_returns.std() * np.sqrt(252))
             }}
 
-# --- Flask App and API Endpoints (Unchanged) ---
+# --- Flask App and API Endpoints ---
 app = Flask(__name__)
 strategy = AdvancedTradingStrategy()
 
 @app.route('/')
 def index():
-    with open('index.html', 'r') as f:
-        return f.read()
+    # --- THIS IS THE CORRECTED FUNCTION ---
+    # Flask will automatically look for this file in the 'templates' folder
+    return render_template('index.html')
 
 NIFTY_50_STOCKS = ['ADANIENT.NS', 'ADANIPORTS.NS', 'APOLLOHOSP.NS', 'ASIANPAINT.NS', 'AXISBANK.NS', 'BAJAJ-AUTO.NS', 'BAJFINANCE.NS', 'BAJAJFINSV.NS', 'BPCL.NS', 'BHARTIARTL.NS', 'BRITANNIA.NS', 'CIPLA.NS', 'COALINDIA.NS', 'DIVISLAB.NS', 'DRREDDY.NS', 'EICHERMOT.NS', 'GRASIM.NS', 'HCLTECH.NS', 'HDFCBANK.NS', 'HDFCLIFE.NS', 'HEROMOTOCO.NS', 'HINDALCO.NS', 'HINDUNILVR.NS', 'ICICIBANK.NS', 'ITC.NS', 'INDUSINDBK.NS', 'INFY.NS', 'JSWSTEEL.NS', 'KOTAKBANK.NS', 'LTIM.NS', 'LT.NS', 'M&M.NS', 'MARUTI.NS', 'NTPC.NS', 'NESTLEIND.NS', 'ONGC.NS', 'POWERGRID.NS', 'RELIANCE.NS', 'SBILIFE.NS', 'SHREECEM.NS', 'SBIN.NS', 'SUNPHARMA.NS', 'TATAMOTORS.NS', 'TCS.NS', 'TATACONSUM.NS', 'TATASTEEL.NS', 'TECHM.NS', 'TITAN.NS', 'ULTRACEMCO.NS', 'WIPRO.NS']
 
@@ -364,3 +360,7 @@ def run_backtest_api():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
