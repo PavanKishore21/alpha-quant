@@ -59,12 +59,14 @@ class AdvancedRiskManager:
         
         if len(recent_prices) < self.lookback_period - 5 or recent_prices.isnull().values.any():
             num_stocks = len(selected_stocks)
+            if num_stocks == 0: return {}
             equal_weights = [1/num_stocks] * num_stocks
             return dict(zip(selected_stocks, equal_weights))
             
         daily_returns = recent_prices.pct_change().dropna()
         if daily_returns.empty:
             num_stocks = len(selected_stocks)
+            if num_stocks == 0: return {}
             equal_weights = [1/num_stocks] * num_stocks
             return dict(zip(selected_stocks, equal_weights))
 
@@ -108,7 +110,14 @@ class AdvancedRiskManager:
 class OptimizedMLRankingSystem:
     def __init__(self):
         self.ridge = Ridge(alpha=1.0)
-        self.mlp = MLPRegressor(hidden_layer_sizes=(32,), max_iter=50, early_stopping=True, random_state=42)
+        # --- CHANGE: Added batch_size to reduce memory usage during training ---
+        self.mlp = MLPRegressor(
+            hidden_layer_sizes=(32,), 
+            max_iter=50, 
+            early_stopping=True, 
+            random_state=42,
+            batch_size=64  # Process data in smaller chunks
+        )
         self.scaler = StandardScaler()
         self.selector = SelectKBest(f_regression, k=6)
         self.is_trained = False
@@ -321,8 +330,6 @@ strategy = AdvancedTradingStrategy()
 
 @app.route('/')
 def index():
-    # --- THIS IS THE CORRECTED FUNCTION ---
-    # Flask will automatically look for this file in the 'templates' folder
     return render_template('index.html')
 
 NIFTY_50_STOCKS = ['ADANIENT.NS', 'ADANIPORTS.NS', 'APOLLOHOSP.NS', 'ASIANPAINT.NS', 'AXISBANK.NS', 'BAJAJ-AUTO.NS', 'BAJFINANCE.NS', 'BAJAJFINSV.NS', 'BPCL.NS', 'BHARTIARTL.NS', 'BRITANNIA.NS', 'CIPLA.NS', 'COALINDIA.NS', 'DIVISLAB.NS', 'DRREDDY.NS', 'EICHERMOT.NS', 'GRASIM.NS', 'HCLTECH.NS', 'HDFCBANK.NS', 'HDFCLIFE.NS', 'HEROMOTOCO.NS', 'HINDALCO.NS', 'HINDUNILVR.NS', 'ICICIBANK.NS', 'ITC.NS', 'INDUSINDBK.NS', 'INFY.NS', 'JSWSTEEL.NS', 'KOTAKBANK.NS', 'LTIM.NS', 'LT.NS', 'M&M.NS', 'MARUTI.NS', 'NTPC.NS', 'NESTLEIND.NS', 'ONGC.NS', 'POWERGRID.NS', 'RELIANCE.NS', 'SBILIFE.NS', 'SHREECEM.NS', 'SBIN.NS', 'SUNPHARMA.NS', 'TATAMOTORS.NS', 'TCS.NS', 'TATACONSUM.NS', 'TATASTEEL.NS', 'TECHM.NS', 'TITAN.NS', 'ULTRACEMCO.NS', 'WIPRO.NS']
@@ -360,7 +367,6 @@ def run_backtest_api():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
-
 
 if __name__ == '__main__':
     app.run(debug=True)
