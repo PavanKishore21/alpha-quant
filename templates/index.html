@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALPHA-QUANT - AI-Driven Portfolio Optimization & Risk Management System</title>
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><path fill='%234f46e5' d='M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM256 400a144 144 0 1 1 0-288 144 144 0 1 1 0 288zm0-80a64 64 0 1 0 0-128 64 64 0 1 0 0 128z'/></svg>">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.26.0/plotly.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <style>
+        :root {
+            --primary: #4f46e5; --primary-light: #675ef2; --secondary: #14b8a6;
+            --success: #22c55e; --success-light: #4ade80; --warning: #f59e0b; --danger: #ef4444;
+            --bg-dark: #0f172a; --bg-card: #1e293b; --border-color: rgba(255, 255, 255, 0.1);
+            --text-primary: #f1f5f9; --text-secondary: #94a3b8; --text-tertiary: #64748b;
+        }
+        body { background-color: var(--bg-dark); font-family: 'Poppins', sans-serif; color: var(--text-primary); }
+        h1, h2, h3, h4, h5, h6 { font-weight: 600; }
+        .main-container { padding: 1rem 2rem; }
+        .navbar { background: linear-gradient(90deg, var(--bg-card) 0%, var(--bg-dark) 100%); border-bottom: 1px solid var(--border-color); }
+        .navbar-brand { font-weight: 700; font-size: 1.5rem; color: var(--text-primary) !important; }
+        .navbar-brand i { color: var(--primary); }
+        .card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 1rem; margin-bottom: 1.5rem; box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.2); }
+        .card-header { background-color: rgba(30, 41, 59, 0.7); border-bottom: 1px solid var(--border-color); padding: 1.25rem 1.5rem; font-size: 1.1rem; font-weight: 500; color: var(--text-primary); }
+        .card-body { padding: 1.5rem; }
+        .metric-card { padding: 1.25rem; text-align: center; height: 100%; background: rgba(30, 41, 59, 0.5); border-radius: 0.75rem; border: 1px solid var(--border-color); }
+        .metric-card i { font-size: 1.5rem; color: var(--primary); margin-bottom: 0.5rem; }
+        .metric-card h3 { font-size: 1.75rem; margin-bottom: 0.25rem; color: var(--text-primary); font-weight: 600; }
+        .metric-card p { font-size: 0.8rem; color: var(--text-secondary); margin: 0; }
+        .btn-primary { background-color: var(--primary); border-color: var(--primary); border-radius: 0.75rem; padding: 0.6rem 1.25rem; font-weight: 500; transition: all 0.2s ease; }
+        .btn-primary:hover, .btn-primary:focus { background-color: var(--primary-light); border-color: var(--primary-light); transform: translateY(-2px); box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3); }
+        
+        .form-control, .form-select { background-color: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 0.75rem; padding: 0.6rem 1rem; }
+        .form-control:focus, .form-select:focus { background-color: var(--bg-card); border-color: var(--primary); box-shadow: 0 0 0 0.25rem rgba(79, 70, 229, 0.25); color: var(--text-primary); }
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+
+        .data-table-container { max-height: 400px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--primary) var(--bg-dark); }
+        .data-table { width: 100%; color: var(--text-secondary); font-size: 0.85rem; }
+        .data-table th { position: sticky; top: -1px; background: var(--bg-card); font-size: 0.75rem; text-transform: uppercase; will-change: transform; padding: 0.75rem; color: var(--text-secondary); font-weight: 600; }
+        .data-table td { padding: 0.75rem; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+        .data-table tr:hover { background-color: rgba(79, 70, 229, 0.15); }
+        .form-check-input { background-color: var(--bg-card); border: 1px solid var(--border-color); }
+        .form-check-input:checked { background-color: var(--primary); border-color: var(--primary); }
+        #stockListSpinner { display: none; }
+        #stockListSpinner.visible { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        .text-success { color: var(--success) !important; }
+        .text-danger { color: var(--danger) !important; }
+        .table-sticky-header thead th { position: sticky; top: 0; z-index: 10; }
+        .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); display: flex; align-items: center; justify-content: center; z-index: 20; border-radius: 1rem; }
+        .chart-container { position: relative; width: 100%; }
+        .chart-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.7); display: flex; align-items: center; justify-content: center; z-index: 10; border-radius: inherit; }
+        .header-gradient { background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .performance-metric { background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1.5rem; }
+        .trading-pill { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 500; }
+        .trading-pill.buy { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+        .trading-pill.sell { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        .feature-importance-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; margin-top: 0.25rem; }
+        .feature-importance-bar > div { height: 100%; }
+        .positive-bar { background: var(--success); }
+        .negative-bar { background: var(--danger); }
+        
+        .green-label {
+            color: var(--text-secondary) !important;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            display: block;
+            font-size: 0.9rem;
+        }
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-bullseye me-2"></i>ALPHA-<span class="header-gradient">QUANT</span>
+            </a>
+        </div>
+    </nav>
+    <div class="main-container">
+        <div class="row">
+            <div class="col-xl-8">
+                <div class="card fade-in">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-sliders-h me-2"></i>Strategy & Execution Parameters</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <span class="green-label">Sort Stock Universe By</span>
+                                <select id="sortStocksBy" class="form-select">
+                                    <option value="market_cap" selected>Market Cap</option>
+                                    <option value="pe_ratio">P/E Ratio</option>
+                                    <option value="pb_ratio">P/B Ratio</option>
+                                    <option value="dividend_yield">Dividend Yield</option>
+                                    <option value="ev_ebitda">EV/EBITDA</option>
+                                    <option value="roe">ROE</option>
+                                </select>
+                            </div>
+                             <div class="col-md-4">
+                                <span class="green-label">Start Date</span>
+                                <input type="date" id="startDate" class="form-control" value="2023-01-01">
+                            </div>
+                            <div class="col-md-4">
+                                <span class="green-label">End Date</span>
+                                <input type="date" id="endDate" class="form-control" value="">
+                            </div>
+                            <div class="col-md-3">
+                                <span class="green-label">Sharpe Lookback</span>
+                                <input type="number" id="sharpeLookback" class="form-control" value="30" min="5">
+                            </div>
+                            <div class="col-md-3">
+                                <span class="green-label">Max Stocks</span>
+                                <input type="number" id="maxStocks" class="form-control" value="10" min="2">
+                            </div>
+                            <div class="col-md-3">
+                                <span class="green-label">Transaction Costs (bps)</span>
+                                <input type="number" id="transactionCosts" class="form-control" value="5" min="0">
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <button id="executeBtn" class="btn btn-primary w-100">
+                                    <i class="fas fa-play me-2"></i>Execute Backtest
+                                </button>
+                            </div>
+                        </div>
+                        <hr class="my-4" style="border-color: var(--border-color);">
+                        <div id="stockListSpinner" class="justify-content-center align-items-center py-5">
+                            <div class="spinner-border text-primary"></div>
+                        </div>
+                        <div class="data-table-container d-none" id="stockListContainer">
+                            <table class="data-table table-sticky-header">
+                                <thead>
+                                    <tr>
+                                        <th><input class="form-check-input" type="checkbox" id="selectAllStocks"></th>
+                                        <th>Ticker</th>
+                                        <th>Market Cap</th>
+                                        <th>P/E Ratio</th>
+                                        <th>ROE</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stockListBody">
+                                    </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div id="resultsSection" class="d-none">
+                    <div class="card fade-in">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Performance Analysis</h5>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="logScaleToggle" checked>
+                                <label class="form-check-label" for="logScaleToggle">Log Scale</label>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                             <div class="chart-container">
+                                <div id="performanceChartContainer" style="height: 400px;"></div>
+                                <div id="chartLoadingOverlay" class="loading-overlay d-none">
+                                    <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-lg-6">
+                             <div class="card fade-in">
+                                <div class="card-header"><h5 class="mb-0"><i class="fas fa-clipboard-list me-2"></i>Trade & P/L Log</h5></div>
+                                <div class="card-body data-table-container" id="tradeLogContainer" style="padding: 0;">
+                                     </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                             <div class="card fade-in">
+                                <div class="card-header"><h5 class="mb-0"><i class="fas fa-brain me-2"></i>ML Feature Importance</h5></div>
+                                <div class="card-body" id="featureImportanceContainer" style="padding-top: 1rem; padding-bottom: 1rem;">
+                                     </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-4">
+                <div id="metrics-and-allocation" class="d-none">
+                    <div class="card fade-in">
+                        <div class="card-header"><h5 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i>Performance Metrics</h5></div>
+                        <div class="card-body performance-metric">
+                            <div class="row g-3">
+                                <div class="col-6"><div class="metric-card"><i class="fas fa-trophy"></i><h3 id="totalReturn">0.0%</h3><p>Total Return</p></div></div>
+                                <div class="col-6"><div class="metric-card"><i class="fas fa-chart-line"></i><h3 id="sharpeRatio">0.00</h3><p>Sharpe Ratio</p></div></div>
+                                <div class="col-6"><div class="metric-card"><i class="fas fa-shield-alt"></i><h3 id="sortinoRatio">0.00</h3><p>Sortino Ratio</p></div></div>
+                                <div class="col-6"><div class="metric-card"><i class="fas fa-balance-scale"></i><h3 id="calmarRatio">0.00</h3><p>Calmar Ratio</p></div></div>
+                                <div class="col-6"><div class="metric-card"><i class="fab fa-think-peaks"></i><h3 id="alpha">0.00</h3><p>Alpha</p></div></div>
+                                <div class="col-6"><div class="metric-card"><i class="fas fa-wave-square"></i><h3 id="beta">0.00</h3><p>Beta</p></div></div>
+                                <div class="col-6"><div class="metric-card"><i class="fas fa-arrow-trend-down"></i><h3 id="maxDrawdown">0.0%</h3><p>Max Drawdown</p></div></div>
+                                <div class="col-6"><div class="metric-card"><i class="fas fa-tachometer-alt-fast"></i><h3 id="volatility">0.0%</h3><p>Volatility</p></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card fade-in">
+                        <div class="card-header"><h5 class="mb-0"><i class="fas fa-briefcase me-2"></i>Latest Portfolio Allocation</h5></div>
+                        <div class="card-body d-flex align-items-center justify-content-center" id="portfolioHoldings">
+                            <div class="chart-container" style="height: 300px;">
+                                <canvas id="allocationChart"></canvas>
+                                <div id="allocationChartOverlay" class="loading-overlay d-none">
+                                    <div class="spinner-border text-primary"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let allocationChart = null;
+        let performanceChart = null;
+
+        const formatters = {
+            pct: (val) => `${(val * 100).toFixed(1)}%`,
+            dec: (val) => val.toFixed(2),
+            dec_pos: (val) => (val > 0 ? '+' : '') + val.toFixed(2),
+            cr: (val) => (val / 10000000).toFixed(2) + ' Cr'
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
+            loadStockList();
+            
+            document.getElementById('sortStocksBy').addEventListener('change', loadStockList);
+            document.getElementById('selectAllStocks').addEventListener('change', (e) => {
+                document.querySelectorAll('.stock-checkbox').forEach(cb => cb.checked = e.target.checked);
+            });
+            document.getElementById('executeBtn').addEventListener('click', runBacktest);
+            document.getElementById('logScaleToggle').addEventListener('change', togglePerformanceChartScale);
+        });
+        
+        async function loadStockList() {
+            const spinner = document.getElementById('stockListSpinner');
+            const container = document.getElementById('stockListContainer');
+            const tbody = document.getElementById('stockListBody');
+            const sortBy = document.getElementById('sortStocksBy').value;
+
+            spinner.classList.add('visible');
+            container.classList.add('d-none');
+            tbody.innerHTML = '';
+            
+            try {
+                const response = await fetch(`/api/nifty50_stocks?sort_by=${sortBy}`);
+                if (!response.ok) throw new Error('Failed to load stock data');
+                const stocks = await response.json();
+
+                stocks.forEach(stock => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><input class="form-check-input stock-checkbox" type="checkbox" data-ticker="${stock.ticker}" checked></td>
+                            <td class="fw-medium">${stock.ticker.replace('.NS', '')}</td>
+                            <td>₹${formatters.cr(stock.market_cap)}</td>
+                            <td>${stock.pe_ratio ? formatters.dec(stock.pe_ratio) : 'N/A'}</td>
+                            <td>${stock.roe ? formatters.pct(stock.roe) : 'N/A'}</td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                showAlert(error.message, 'danger');
+            } finally {
+                spinner.classList.remove('visible');
+                container.classList.remove('d-none');
+            }
+        }
+
+        async function runBacktest() {
+            const button = document.getElementById('executeBtn');
+            button.disabled = true;
+            button.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Executing...`;
+
+            document.getElementById('resultsSection').classList.add('d-none');
+            document.getElementById('metrics-and-allocation').classList.add('d-none');
+            document.getElementById('chartLoadingOverlay').classList.remove('d-none');
+            if (allocationChart) document.getElementById('allocationChartOverlay').classList.remove('d-none');
+
+            const selectedStocks = Array.from(document.querySelectorAll('.stock-checkbox:checked')).map(cb => cb.dataset.ticker);
+            if (selectedStocks.length < 2) {
+                showAlert('Please select at least 2 stocks for the backtest.', 'warning');
+                button.disabled = false;
+                button.innerHTML = `<i class="fas fa-play me-2"></i>Execute Backtest`;
+                return;
+            }
+
+            const payload = {
+                start_date: document.getElementById('startDate').value,
+                end_date: document.getElementById('endDate').value,
+                selected_stocks: selectedStocks,
+                sharpe_lookback: parseInt(document.getElementById('sharpeLookback').value),
+                rebalance_frequency: 30, // Hardcoded as per original python logic
+                max_stocks: parseInt(document.getElementById('maxStocks').value),
+                transaction_cost_bps: parseInt(document.getElementById('transactionCosts').value)
+            };
+
+            try {
+                const response = await fetch('/api/backtest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const results = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(results.error || 'An unknown error occurred during backtest.');
+                }
+                
+                document.getElementById('resultsSection').classList.remove('d-none', 'fade-in');
+                void document.getElementById('resultsSection').offsetWidth; // Trigger reflow
+                document.getElementById('resultsSection').classList.add('fade-in');
+                
+                document.getElementById('metrics-and-allocation').classList.remove('d-none', 'fade-in');
+                void document.getElementById('metrics-and-allocation').offsetWidth; // Trigger reflow
+                document.getElementById('metrics-and-allocation').classList.add('fade-in');
+                
+                updateMetrics(results.performance_metrics);
+                updatePerformanceChart(results.dates, results.portfolio_values, results.benchmark_values);
+                updateTradeLog(results.trade_log);
+                updateFeatureImportance(results.feature_importances);
+                updatePortfolioAllocation(results.portfolio_compositions);
+
+                showAlert('Backtest completed successfully!', 'success');
+
+            } catch (error) {
+                showAlert(`Error: ${error.message}`, 'danger');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = `<i class="fas fa-play me-2"></i>Execute Backtest`;
+                document.getElementById('chartLoadingOverlay').classList.add('d-none');
+                if(allocationChart) document.getElementById('allocationChartOverlay').classList.add('d-none');
+            }
+        }
+        
+        function updateMetrics(metrics) {
+            document.getElementById('totalReturn').textContent = formatters.pct(metrics.total_return);
+            document.getElementById('sharpeRatio').textContent = formatters.dec(metrics.sharpe_ratio);
+            document.getElementById('sortinoRatio').textContent = formatters.dec(metrics.sortino_ratio);
+            document.getElementById('calmarRatio').textContent = formatters.dec(metrics.calmar_ratio);
+            document.getElementById('alpha').textContent = formatters.dec(metrics.alpha);
+            document.getElementById('beta').textContent = formatters.dec(metrics.beta);
+            document.getElementById('maxDrawdown').textContent = formatters.pct(metrics.max_drawdown);
+            document.getElementById('volatility').textContent = formatters.pct(metrics.annualized_volatility);
+
+            document.getElementById('totalReturn').classList.toggle('text-success', metrics.total_return > 0);
+            document.getElementById('totalReturn').classList.toggle('text-danger', metrics.total_return < 0);
+        }
+
+        function updatePerformanceChart(dates, portfolioValues, benchmarkValues) {
+            const container = document.getElementById('performanceChartContainer');
+            const portfolioTrace = { x: dates, y: portfolioValues, type: 'scatter', mode: 'lines', name: 'Portfolio', line: { color: 'var(--primary)', width: 3, shape: 'spline' }, fill: 'tozeroy', fillcolor: 'rgba(79, 70, 229, 0.1)' };
+            const benchmarkTrace = { x: dates, y: benchmarkValues, type: 'scatter', mode: 'lines', name: 'Benchmark (NIFTY 50)', line: { color: 'var(--secondary)', width: 2, shape: 'spline', dash: 'dot' }};
+            
+            const isLog = document.getElementById('logScaleToggle').checked;
+
+            const layout = {
+                autosize: true, margin: { l: 50, r: 20, t: 20, b: 50 },
+                plot_bgcolor: 'transparent', paper_bgcolor: 'transparent',
+                font: { color: 'var(--text-secondary)', family: 'Poppins' },
+                xaxis: { gridcolor: 'rgba(255, 255, 255, 0.05)', zeroline: false, type: 'date' },
+                yaxis: { 
+                    gridcolor: 'rgba(255, 255, 255, 0.1)', 
+                    zeroline: false, 
+                    title: { text: 'Cumulative Returns', font: { size: 12 } },
+                    type: isLog ? 'log' : 'linear'
+                },
+                legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center' },
+                hovermode: 'x unified', hoverlabel: { bgcolor: 'var(--bg-dark)', font: { color: 'var(--text-primary)' } }
+            };
+
+            Plotly.newPlot(container, [portfolioTrace, benchmarkTrace], layout, { responsive: true });
+            performanceChart = container;
+        }
+        
+        function togglePerformanceChartScale() {
+            if (!performanceChart) return;
+            const isLog = document.getElementById('logScaleToggle').checked;
+            const update = { 'yaxis.type': isLog ? 'log' : 'linear' };
+            Plotly.relayout(performanceChart, update);
+        }
+
+        function updateTradeLog(tradeLog) {
+            const container = document.getElementById('tradeLogContainer');
+            if (!tradeLog || tradeLog.length === 0) {
+                container.innerHTML = '<p class="text-center p-3 text-secondary">No trades were executed in this period.</p>';
+                return;
+            }
+            let tableHTML = `<table class="data-table"><thead><tr><th>Stock</th><th>Entry Date</th><th>Exit Date</th><th>Return</th></tr></thead><tbody>`;
+            tradeLog.slice(-50).reverse().forEach(trade => {
+                const returnClass = trade.return_pct >= 0 ? 'text-success' : 'text-danger';
+                tableHTML += `<tr><td class="fw-medium">${trade.stock}</td><td>${trade.entry_date}</td><td>${trade.exit_date}</td><td class="${returnClass}">${(trade.return_pct).toFixed(2)}%</td></tr>`;
+            });
+            tableHTML += `</tbody></table>`;
+            container.innerHTML = tableHTML;
+        }
+
+        function updateFeatureImportance(importances) {
+            const container = document.getElementById('featureImportanceContainer');
+            if (!importances || Object.keys(importances).length === 0) {
+                container.innerHTML = '<p class="text-center p-3 text-secondary">ML model was not trained or no features selected.</p>';
+                return;
+            }
+            let tableHTML = `<table class="data-table"><thead><tr><th>Feature</th><th>Importance Score</th><th>Impact</th></tr></thead><tbody>`;
+            const maxImportance = Math.max(...Object.values(importances).map(Math.abs));
+            
+            for (const [feature, importance] of Object.entries(importances)) {
+                const importanceClass = importance >= 0 ? 'text-success' : 'text-danger';
+                const barClass = importance >= 0 ? 'positive-bar' : 'negative-bar';
+                const impactWidth = maxImportance > 0 ? (Math.abs(importance) / maxImportance) * 100 : 0;
+                tableHTML += `<tr><td class="fw-medium">${feature}</td><td class="${importanceClass}">${formatters.dec_pos(importance)}</td><td><div class="feature-importance-bar"><div class="${barClass}" style="width: ${impactWidth}%"></div></div></td></tr>`;
+            }
+            tableHTML += `</tbody></table>`;
+            container.innerHTML = tableHTML;
+        }
+
+        function updatePortfolioAllocation(compositions) {
+            const latestComposition = compositions[compositions.length - 1];
+            if (!latestComposition || latestComposition.stocks.length === 0) {
+                 if (allocationChart) allocationChart.destroy();
+                 document.getElementById('portfolioHoldings').innerHTML = '<p class="text-center p-3 text-secondary">No holdings in the latest portfolio.</p>';
+                 initAllocationChart([], []);
+                 return;
+            }
+            const labels = latestComposition.stocks.map(s => s[0].replace('.NS', ''));
+            const data = latestComposition.stocks.map(s => (s[1] * 100).toFixed(2));
+            
+            if (allocationChart) {
+                allocationChart.data.labels = labels;
+                allocationChart.data.datasets[0].data = data;
+                allocationChart.update();
+            } else {
+                initAllocationChart(labels, data);
+            }
+        }
+        
+        function initAllocationChart(labels = [], data = []) {
+            const ctx = document.getElementById('allocationChart').getContext('2d');
+            const chartColors = ['#4f46e5', '#14b8a6', '#f59e0b', '#8b5cf6', '#3b82f6', '#22c55e', '#ec4899', '#f97316', '#64748b', '#d946ef'];
+
+            if (allocationChart) {
+                allocationChart.destroy();
+            }
+
+            allocationChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: labels, datasets: [{ data: data, backgroundColor: chartColors, borderWidth: 0 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            position: 'right', 
+                            labels: { 
+                                color: '#f1f5f9', 
+                                font: { family: 'Poppins', size: 10 }, 
+                                boxWidth: 12, 
+                                padding: 15 
+                            }
+                        },
+                        tooltip: { callbacks: { label: (c) => `${c.label}: ${c.parsed}%` }, backgroundColor: 'var(--bg-card)', titleColor: 'var(--text-primary)', bodyColor: 'var(--text-secondary)', borderColor: 'var(--border-color)', borderWidth: 1 }
+                    }
+                }
+            });
+        }
+        
+        function showAlert(message, type = 'success') {
+            const alertContainer = document.createElement('div');
+            alertContainer.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 1055; min-width: 300px;';
+            document.body.appendChild(alertContainer);
+            
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `<div class="d-flex align-items-center"><i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'} me-2"></i><div>${message}</div></div><button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+            
+            alertContainer.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                const bsAlert = new bootstrap.Alert(alertDiv);
+                bsAlert.close();
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
