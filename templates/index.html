@@ -202,7 +202,6 @@
                     <div class="card fade-in">
                         <div class="card-header"><h5 class="mb-0"><i class="fas fa-briefcase me-2"></i>Latest Portfolio Allocation</h5></div>
                         <div class="card-body d-flex align-items-center justify-content-center" id="portfolioHoldings">
-                            <!-- --- CHANGE: HTML STRUCTURE FOR CHART --- -->
                             <div id="chartWrapper" class="chart-container" style="height: 300px;">
                                 <canvas id="allocationChart"></canvas>
                                 <div id="allocationChartOverlay" class="loading-overlay d-none">
@@ -210,7 +209,6 @@
                                 </div>
                             </div>
                             <p id="noHoldingsMessage" class="text-center p-3 text-secondary d-none">No holdings in the latest portfolio.</p>
-                            <!-- --- END CHANGE --- -->
                         </div>
                     </div>
                 </div>
@@ -309,7 +307,7 @@
                 end_date: document.getElementById('endDate').value,
                 selected_stocks: selectedStocks,
                 sharpe_lookback: parseInt(document.getElementById('sharpeLookback').value),
-                rebalance_frequency: 45,
+                rebalance_frequency: 30,
                 max_stocks: parseInt(document.getElementById('maxStocks').value),
                 transaction_cost_bps: parseInt(document.getElementById('transactionCosts').value)
             };
@@ -434,14 +432,14 @@
             container.innerHTML = tableHTML;
         }
 
-        // --- CHANGE: UPDATED CHARTING LOGIC ---
         function updatePortfolioAllocation(compositions) {
             const chartWrapper = document.getElementById('chartWrapper');
             const noHoldingsMessage = document.getElementById('noHoldingsMessage');
-            const latestComposition = compositions[compositions.length - 1];
+            
+            // --- FIX: Find the last composition that actually has stocks ---
+            const latestComposition = [...compositions].reverse().find(c => c.stocks && c.stocks.length > 0);
 
-            if (!latestComposition || latestComposition.stocks.length === 0) {
-                // If no holdings, hide chart and show message
+            if (!latestComposition) {
                 chartWrapper.classList.add('d-none');
                 noHoldingsMessage.classList.remove('d-none');
                 if (allocationChart) {
@@ -451,7 +449,6 @@
                 return;
             }
 
-            // If there are holdings, show chart and hide message
             chartWrapper.classList.remove('d-none');
             noHoldingsMessage.classList.add('d-none');
             
@@ -468,7 +465,6 @@
         }
         
         function initAllocationChart(labels = [], data = []) {
-            // Check if canvas element exists before trying to get context
             const canvas = document.getElementById('allocationChart');
             if (!canvas) return; 
             const ctx = canvas.getContext('2d');
@@ -499,7 +495,6 @@
                 }
             });
         }
-        // --- END CHANGE ---
         
         function showAlert(message, type = 'success') {
             const alertContainer = document.createElement('div');
