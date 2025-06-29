@@ -141,9 +141,9 @@ class OptimizedMLRankingSystem:
             self.is_trained = False
             return False
 
-        feature_list = Parallel(n_jobs=-1, backend="threading")(
-            delayed(self.get_features_for_stock)(train_price_data[stock]) for stock in stock_universe
-        )
+        feature_list = [
+            self.get_features_for_stock(train_price_data[stock]) for stock in stock_universe
+        ]
 
         X_list, y_list = [], []
         targets = train_price_data.pct_change(21).shift(-21)
