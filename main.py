@@ -58,6 +58,7 @@ DEFAULT_TRANSACTION_COST_BPS = 10
 MODEL_TRAINING_WINDOW = 252
 PREFER_SEED_MARKET_DATA = os.getenv("PREFER_SEED_MARKET_DATA", os.getenv("RENDER", "")).strip().lower() in {"1", "true", "yes"}
 SEED_COVERAGE_TOLERANCE_DAYS = 4
+FAST_DEPLOYMENT_MODE = os.getenv("FAST_DEPLOYMENT_MODE", os.getenv("RENDER", "")).strip().lower() in {"1", "true", "yes"}
 
 CORE_LIVE_STOCKS = (
     "RELIANCE.NS",
@@ -1353,6 +1354,9 @@ class QuantResearchEngine:
         return list(history_index[min_position : max_position + 1])
 
     def _train_model(self, factor_book, forward_returns, training_dates):
+        if FAST_DEPLOYMENT_MODE:
+            return None, None, self._default_feature_importances()
+
         if len(training_dates) < 4:
             return None, None, self._default_feature_importances()
 
