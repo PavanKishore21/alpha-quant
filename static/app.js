@@ -42,9 +42,11 @@ const plotColors = {
     grid: "rgba(111, 132, 160, 0.18)",
 };
 
-const IS_RENDER_DEPLOYMENT = window.location.hostname.endsWith("onrender.com");
-const UNIVERSE_TIMEOUT_MS = IS_RENDER_DEPLOYMENT ? 30000 : 12000;
-const BACKTEST_TIMEOUT_MS = IS_RENDER_DEPLOYMENT ? 80000 : 45000;
+const runtimeConfig = window.APP_RUNTIME || {};
+const APP_MODE = runtimeConfig.mode || (window.location.hostname.endsWith("onrender.com") ? "render_snapshot" : "full_research");
+const IS_RENDER_SNAPSHOT_MODE = APP_MODE === "render_snapshot";
+const UNIVERSE_TIMEOUT_MS = runtimeConfig.universeTimeoutMs || (IS_RENDER_SNAPSHOT_MODE ? 30000 : 12000);
+const BACKTEST_TIMEOUT_MS = runtimeConfig.backtestTimeoutMs || (IS_RENDER_SNAPSHOT_MODE ? 80000 : 45000);
 const STATUS_REFRESH_INTERVAL_MS = 30000;
 
 const state = {
@@ -177,7 +179,7 @@ async function loadUniverse() {
         if (!payload.is_fallback) {
             state.universeAutoRetryCount = 0;
         }
-        if (payload.is_fallback && !IS_RENDER_DEPLOYMENT && state.universeAutoRetryCount < 1) {
+        if (payload.is_fallback && !IS_RENDER_SNAPSHOT_MODE && state.universeAutoRetryCount < 1) {
             state.universeAutoRetryCount += 1;
             state.universeRetryTimer = window.setTimeout(() => {
                 state.universeRetryTimer = null;
@@ -186,11 +188,11 @@ async function loadUniverse() {
         }
     } catch (error) {
         const message = error.name === "AbortError"
-            ? IS_RENDER_DEPLOYMENT
+            ? IS_RENDER_SNAPSHOT_MODE
                 ? "The deployment is still starting or the market snapshot is taking longer than expected. Wait a few seconds and try again."
                 : "Market data refresh is taking longer than expected. Try again in a moment."
             : toProductMarketMessage(error.message);
-        if (IS_RENDER_DEPLOYMENT && state.universe.length === 0 && state.universeAutoRetryCount < 1) {
+        if (IS_RENDER_SNAPSHOT_MODE && state.universe.length === 0 && state.universeAutoRetryCount < 1) {
             state.universeAutoRetryCount += 1;
             state.universeRetryTimer = window.setTimeout(() => {
                 state.universeRetryTimer = null;
@@ -375,7 +377,7 @@ async function runBacktest() {
         toast("Backtest completed successfully.", "success");
     } catch (error) {
         const rawMessage = error.name === "AbortError"
-            ? IS_RENDER_DEPLOYMENT
+            ? IS_RENDER_SNAPSHOT_MODE
                 ? "Backtest took too long to respond. The deployment may still be starting or the request may have exceeded the live processing window."
                 : "Backtest took too long to respond. The first run can take longer while the local market-data cache warms up. Try the core 10 basket again once, or shorten the date range."
             : error.message;

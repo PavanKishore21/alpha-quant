@@ -56,9 +56,54 @@ DEFAULT_REBALANCE_FREQUENCY = 21
 DEFAULT_MAX_HOLDINGS = 5
 DEFAULT_TRANSACTION_COST_BPS = 10
 MODEL_TRAINING_WINDOW = 252
-PREFER_SEED_MARKET_DATA = os.getenv("PREFER_SEED_MARKET_DATA", os.getenv("RENDER", "")).strip().lower() in {"1", "true", "yes"}
 SEED_COVERAGE_TOLERANCE_DAYS = 4
-FAST_DEPLOYMENT_MODE = os.getenv("FAST_DEPLOYMENT_MODE", os.getenv("RENDER", "")).strip().lower() in {"1", "true", "yes"}
+
+
+@dataclass(frozen=True)
+class AppModeConfig:
+    key: str
+    label: str
+    description: str
+    prefer_seed_market_data: bool
+    allow_live_training: bool
+    universe_timeout_ms: int
+    backtest_timeout_ms: int
+
+
+APP_MODES = {
+    "render_snapshot": AppModeConfig(
+        key="render_snapshot",
+        label="Render Snapshot Mode",
+        description="Deployment-safe mode with cached market snapshots and bounded execution for small-host reliability.",
+        prefer_seed_market_data=True,
+        allow_live_training=False,
+        universe_timeout_ms=30000,
+        backtest_timeout_ms=80000,
+    ),
+    "full_research": AppModeConfig(
+        key="full_research",
+        label="Full Research Mode",
+        description="Full historical research mode with live market retrieval and walk-forward model training.",
+        prefer_seed_market_data=False,
+        allow_live_training=True,
+        universe_timeout_ms=12000,
+        backtest_timeout_ms=45000,
+    ),
+}
+
+
+def resolve_app_mode() -> AppModeConfig:
+    raw_value = os.getenv("APP_MODE", "").strip().lower()
+    if raw_value in APP_MODES:
+        return APP_MODES[raw_value]
+    if os.getenv("RENDER", "").strip():
+        return APP_MODES["render_snapshot"]
+    return APP_MODES["full_research"]
+
+
+APP_MODE = resolve_app_mode()
+PREFER_SEED_MARKET_DATA = APP_MODE.prefer_seed_market_data
+FAST_DEPLOYMENT_MODE = not APP_MODE.allow_live_training
 
 CORE_LIVE_STOCKS = (
     "RELIANCE.NS",
@@ -1601,12 +1646,22 @@ def handle_internal_server_error(exc):
 
 @app.route("/")
 def index():
-    return render_template("index.html", app_title=APP_TITLE)
+    return render_template(
+        "index.html",
+        app_title=APP_TITLE,
+        app_runtime={
+            "mode": APP_MODE.key,
+            "label": APP_MODE.label,
+            "description": APP_MODE.description,
+            "universeTimeoutMs": APP_MODE.universe_timeout_ms,
+            "backtestTimeoutMs": APP_MODE.backtest_timeout_ms,
+        },
+    )
 
 
 @app.get("/healthz")
 def healthcheck():
-    return jsonify({"status": "ok", "service": APP_TITLE})
+    return jsonify({"status": "ok", "service": APP_TITLE, "mode": APP_MODE.key})
 
 
 @app.get("/api/universe")

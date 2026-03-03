@@ -10,6 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script>
+        window.APP_RUNTIME = {{ app_runtime | tojson }};
+    </script>
     <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
