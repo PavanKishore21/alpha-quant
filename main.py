@@ -56,6 +56,8 @@ DEFAULT_REBALANCE_FREQUENCY = 21
 DEFAULT_MAX_HOLDINGS = 5
 DEFAULT_TRANSACTION_COST_BPS = 10
 MODEL_TRAINING_WINDOW = 252
+PREFER_SEED_MARKET_DATA = os.getenv("PREFER_SEED_MARKET_DATA", os.getenv("RENDER", "")).strip().lower() in {"1", "true", "yes"}
+SEED_COVERAGE_TOLERANCE_DAYS = 4
 
 CORE_LIVE_STOCKS = (
     "RELIANCE.NS",
@@ -371,6 +373,38 @@ def get_seed_benchmark(start_date: date, end_date: date):
     return close_series
 
 
+def _seed_payload_covers_window(payload: dict[str, object] | None, start_date: date, end_date: date) -> bool:
+    if not payload:
+        return False
+    dates = payload.get("dates") or []
+    if not dates:
+        return False
+    try:
+        first_available = date.fromisoformat(dates[0])
+        last_available = date.fromisoformat(dates[-1])
+    except (TypeError, ValueError):
+        return False
+    return (
+        first_available <= start_date + timedelta(days=SEED_COVERAGE_TOLERANCE_DAYS)
+        and last_available >= end_date - timedelta(days=SEED_COVERAGE_TOLERANCE_DAYS)
+    )
+
+
+def seed_price_bundle_covers_request(tickers: tuple[str, ...], start_date: date, end_date: date) -> bool:
+    seed_data = load_seed_market_data()
+    if not seed_data:
+        return False
+    tickers_payload = seed_data.get("tickers") or {}
+    return all(_seed_payload_covers_window(tickers_payload.get(ticker), start_date, end_date) for ticker in tickers)
+
+
+def seed_benchmark_covers_request(start_date: date, end_date: date) -> bool:
+    seed_data = load_seed_market_data()
+    if not seed_data:
+        return False
+    return _seed_payload_covers_window(seed_data.get("benchmark"), start_date, end_date)
+
+
 def numeric_mean(values):
     numeric_values = []
     for value in values:
@@ -642,6 +676,13 @@ def download_price_bundle(
         close, volume = cached
         return close, volume, False
 
+    if PREFER_SEED_MARKET_DATA and seed_price_bundle_covers_request(tickers, start_date, end_date):
+        seeded = get_seed_price_bundle(tickers, start_date, end_date)
+        if seeded is not None:
+            seed_close, seed_volume = seeded
+            _store_cached_price_bundle(tickers, start_date, end_date, seed_close, seed_volume)
+            return seed_close, seed_volume, False
+
     close_series_by_ticker = {}
     volume_series_by_ticker = {}
     saw_rate_limit = False
@@ -722,6 +763,12 @@ def download_benchmark(start_date: date, end_date: date, timeout_seconds: float 
     cached = _get_cached_benchmark(start_date, end_date)
     if cached is not None:
         return cached
+
+    if PREFER_SEED_MARKET_DATA and seed_benchmark_covers_request(start_date, end_date):
+        seeded = get_seed_benchmark(start_date, end_date)
+        if seeded is not None:
+            _store_cached_benchmark(start_date, end_date, seeded)
+            return seeded
 
     try:
         result = fetch_chart_result(
