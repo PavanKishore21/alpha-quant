@@ -146,7 +146,7 @@ async function loadUniverse() {
         }
 
         state.universe = payload.stocks || [];
-        syncDateInputsToSnapshot(payload.as_of);
+        syncDateInputsToSnapshot(payload.as_of, payload.supported_window);
         updateMarketTape(payload);
         const runtimeState = payload.is_fallback
             ? "Latest snapshot active"
@@ -177,7 +177,7 @@ async function loadUniverse() {
         if (!payload.is_fallback) {
             state.universeAutoRetryCount = 0;
         }
-        if (payload.is_fallback && state.universeAutoRetryCount < 1) {
+        if (payload.is_fallback && !IS_RENDER_DEPLOYMENT && state.universeAutoRetryCount < 1) {
             state.universeAutoRetryCount += 1;
             state.universeRetryTimer = window.setTimeout(() => {
                 state.universeRetryTimer = null;
@@ -396,14 +396,23 @@ async function runBacktest() {
     }
 }
 
-function syncDateInputsToSnapshot(asOf) {
-    if (!asOf) {
-        return;
-    }
-
+function syncDateInputsToSnapshot(asOf, supportedWindow = null) {
+    const startInput = document.getElementById("startDate");
     const endInput = document.getElementById("endDate");
-    if (!endInput.value || endInput.value > asOf) {
+    if (supportedWindow?.start) {
+        startInput.min = supportedWindow.start;
+        if (!startInput.value || startInput.value < supportedWindow.start) {
+            startInput.value = supportedWindow.start;
+        }
+    }
+    if (supportedWindow?.end) {
+        endInput.max = supportedWindow.end;
+    }
+    if (asOf && (!endInput.value || endInput.value > asOf)) {
         endInput.value = asOf;
+    }
+    if (supportedWindow?.end && endInput.value > supportedWindow.end) {
+        endInput.value = supportedWindow.end;
     }
 }
 

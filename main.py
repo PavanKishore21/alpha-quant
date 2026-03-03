@@ -398,11 +398,63 @@ def seed_price_bundle_covers_request(tickers: tuple[str, ...], start_date: date,
     return all(_seed_payload_covers_window(tickers_payload.get(ticker), start_date, end_date) for ticker in tickers)
 
 
+def seed_price_bundle_supports_end_date(tickers: tuple[str, ...], end_date: date) -> bool:
+    seed_data = load_seed_market_data()
+    if not seed_data:
+        return False
+    tickers_payload = seed_data.get("tickers") or {}
+    return all(_seed_payload_covers_window(tickers_payload.get(ticker), end_date, end_date) for ticker in tickers)
+
+
 def seed_benchmark_covers_request(start_date: date, end_date: date) -> bool:
     seed_data = load_seed_market_data()
     if not seed_data:
         return False
     return _seed_payload_covers_window(seed_data.get("benchmark"), start_date, end_date)
+
+
+def seed_benchmark_supports_end_date(end_date: date) -> bool:
+    seed_data = load_seed_market_data()
+    if not seed_data:
+        return False
+    return _seed_payload_covers_window(seed_data.get("benchmark"), end_date, end_date)
+
+
+def get_seed_supported_window():
+    seed_data = load_seed_market_data()
+    if not seed_data:
+        return None
+
+    tickers_payload = seed_data.get("tickers") or {}
+    first_dates = []
+    last_dates = []
+    for ticker in CORE_LIVE_STOCKS:
+        payload = tickers_payload.get(ticker)
+        if not payload:
+            return None
+        dates = payload.get("dates") or []
+        if not dates:
+            return None
+        try:
+            first_dates.append(date.fromisoformat(dates[0]))
+            last_dates.append(date.fromisoformat(dates[-1]))
+        except (TypeError, ValueError):
+            return None
+
+    benchmark_payload = seed_data.get("benchmark") or {}
+    benchmark_dates = benchmark_payload.get("dates") or []
+    if not benchmark_dates:
+        return None
+    try:
+        first_dates.append(date.fromisoformat(benchmark_dates[0]))
+        last_dates.append(date.fromisoformat(benchmark_dates[-1]))
+    except (TypeError, ValueError):
+        return None
+
+    return {
+        "start": max(first_dates).isoformat(),
+        "end": min(last_dates).isoformat(),
+    }
 
 
 def numeric_mean(values):
@@ -676,7 +728,7 @@ def download_price_bundle(
         close, volume = cached
         return close, volume, False
 
-    if PREFER_SEED_MARKET_DATA and seed_price_bundle_covers_request(tickers, start_date, end_date):
+    if PREFER_SEED_MARKET_DATA and seed_price_bundle_supports_end_date(tickers, end_date):
         seeded = get_seed_price_bundle(tickers, start_date, end_date)
         if seeded is not None:
             seed_close, seed_volume = seeded
@@ -764,7 +816,7 @@ def download_benchmark(start_date: date, end_date: date, timeout_seconds: float 
     if cached is not None:
         return cached
 
-    if PREFER_SEED_MARKET_DATA and seed_benchmark_covers_request(start_date, end_date):
+    if PREFER_SEED_MARKET_DATA and seed_benchmark_supports_end_date(end_date):
         seeded = get_seed_benchmark(start_date, end_date)
         if seeded is not None:
             _store_cached_benchmark(start_date, end_date, seeded)
@@ -934,7 +986,16 @@ def default_universe_rows():
     return [default_universe_row(ticker) for ticker in NIFTY_50_STOCKS]
 
 
-def build_universe_payload(rows, sort_by: str, as_of, tape, is_stale: bool = False, is_fallback: bool = False, warning: str | None = None):
+def build_universe_payload(
+    rows,
+    sort_by: str,
+    as_of,
+    tape,
+    is_stale: bool = False,
+    is_fallback: bool = False,
+    warning: str | None = None,
+    supported_window: dict[str, str] | None = None,
+):
     sorted_rows = list(rows)
     sort_config = SORT_OPTIONS[sort_by]
     sorted_rows.sort(
@@ -950,6 +1011,7 @@ def build_universe_payload(rows, sort_by: str, as_of, tape, is_stale: bool = Fal
         "sort_options": [{"value": key, "label": value["label"]} for key, value in SORT_OPTIONS.items()],
         "tape": tape,
         "stocks": sorted_rows,
+        "supported_window": supported_window,
     }
 
 
@@ -967,6 +1029,7 @@ def build_fallback_universe_payload(
         is_stale=True,
         is_fallback=True,
         warning=warning,
+        supported_window=get_seed_supported_window(),
     )
 
 
@@ -1020,6 +1083,12 @@ def maybe_start_universe_refresh(now: float):
 
 
 def load_universe_snapshot(sort_by: str):
+    if PREFER_SEED_MARKET_DATA:
+        return build_fallback_universe_payload(
+            sort_by,
+            warning="Using the deployed market snapshot for the core 10-stock monitor. This keeps the app responsive on the current hosting tier.",
+        )
+
     now = time.monotonic()
     with UNIVERSE_CACHE_LOCK:
         has_cache = bool(UNIVERSE_CACHE["rows"])
@@ -1055,7 +1124,15 @@ def build_sorted_universe_payload(sort_by: str, is_stale: bool = False):
         as_of = UNIVERSE_CACHE["as_of"]
         tape = dict(UNIVERSE_CACHE["tape"])
         warning = UNIVERSE_CACHE["warning"]
-    return build_universe_payload(rows, sort_by, as_of, tape, is_stale=is_stale, warning=warning)
+    return build_universe_payload(
+        rows,
+        sort_by,
+        as_of,
+        tape,
+        is_stale=is_stale,
+        warning=warning,
+        supported_window=get_seed_supported_window() if PREFER_SEED_MARKET_DATA else None,
+    )
 
 
 class QuantResearchEngine:
