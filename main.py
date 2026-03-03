@@ -1450,6 +1450,27 @@ class QuantResearchEngine:
 app = Flask(__name__)
 
 
+@app.errorhandler(404)
+def handle_not_found(exc):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "The requested API route was not found."}), 404
+    return exc
+
+
+@app.errorhandler(405)
+def handle_method_not_allowed(exc):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "The request method is not allowed for this API route."}), 405
+    return exc
+
+
+@app.errorhandler(500)
+def handle_internal_server_error(exc):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "An unexpected server error occurred while handling the API request."}), 500
+    return exc
+
+
 @app.route("/")
 def index():
     return render_template("index.html", app_title=APP_TITLE)

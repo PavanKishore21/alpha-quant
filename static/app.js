@@ -42,7 +42,9 @@ const plotColors = {
     grid: "rgba(111, 132, 160, 0.18)",
 };
 
-const BACKTEST_TIMEOUT_MS = 45000;
+const IS_RENDER_DEPLOYMENT = window.location.hostname.endsWith("onrender.com");
+const UNIVERSE_TIMEOUT_MS = IS_RENDER_DEPLOYMENT ? 30000 : 12000;
+const BACKTEST_TIMEOUT_MS = IS_RENDER_DEPLOYMENT ? 80000 : 45000;
 const STATUS_REFRESH_INTERVAL_MS = 30000;
 
 const state = {
@@ -133,13 +135,12 @@ async function loadUniverse() {
         kind: "market-loading",
     });
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+    const timeoutId = window.setTimeout(() => controller.abort(), UNIVERSE_TIMEOUT_MS);
     try {
         const sortBy = document.getElementById("sortBy").value;
-        const response = await fetch(`/api/universe?sort_by=${encodeURIComponent(sortBy)}`, {
+        const { response, payload } = await fetchApiJson(`/api/universe?sort_by=${encodeURIComponent(sortBy)}`, {
             signal: controller.signal,
         });
-        const payload = await response.json();
         if (!response.ok) {
             throw new Error(payload.error || "Unable to load the market snapshot.");
         }
@@ -185,8 +186,17 @@ async function loadUniverse() {
         }
     } catch (error) {
         const message = error.name === "AbortError"
-            ? "Market data refresh is taking longer than expected. Try again in a moment."
-            : "Market data could not be refreshed. Try again to request a new snapshot.";
+            ? IS_RENDER_DEPLOYMENT
+                ? "The deployment is still starting or the market snapshot is taking longer than expected. Wait a few seconds and try again."
+                : "Market data refresh is taking longer than expected. Try again in a moment."
+            : toProductMarketMessage(error.message);
+        if (IS_RENDER_DEPLOYMENT && state.universe.length === 0 && state.universeAutoRetryCount < 1) {
+            state.universeAutoRetryCount += 1;
+            state.universeRetryTimer = window.setTimeout(() => {
+                state.universeRetryTimer = null;
+                loadUniverse();
+            }, 8000);
+        }
         toast(message, "danger");
         setStatus({
             tone: "error",
@@ -331,13 +341,12 @@ async function runBacktest() {
     };
 
     try {
-        const response = await fetch("/api/backtest", {
+        const { response, payload: result } = await fetchApiJson("/api/backtest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: controller.signal,
             body: JSON.stringify(payload),
         });
-        const result = await response.json();
         if (!response.ok) {
             throw new Error(result.error || "Unable to complete the backtest.");
         }
@@ -366,7 +375,9 @@ async function runBacktest() {
         toast("Backtest completed successfully.", "success");
     } catch (error) {
         const rawMessage = error.name === "AbortError"
-            ? "Backtest took too long to respond. The first run can take longer while the local market-data cache warms up. Try the core 10 basket again once, or shorten the date range."
+            ? IS_RENDER_DEPLOYMENT
+                ? "Backtest took too long to respond. The deployment may still be starting or the request may have exceeded the live processing window."
+                : "Backtest took too long to respond. The first run can take longer while the local market-data cache warms up. Try the core 10 basket again once, or shorten the date range."
             : error.message;
         const message = toProductBacktestMessage(rawMessage);
         toast(message, "danger");
@@ -726,9 +737,79 @@ function formatDuration(runtimeMs) {
     return `${runtimeMs} ms`;
 }
 
+async function fetchApiJson(url, options) {
+    const response = await fetch(url, options);
+    const rawText = await response.text();
+    if (!rawText) {
+        return { response, payload: {} };
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    const trimmed = rawText.trim();
+    const looksJson = contentType.includes("application/json") || trimmed.startsWith("{") || trimmed.startsWith("[");
+    if (looksJson) {
+        try {
+            return { response, payload: JSON.parse(trimmed) };
+        } catch (error) {
+            throw new Error("The deployment returned malformed API data.");
+        }
+    }
+
+    if (trimmed.startsWith("<")) {
+        throw new Error(describeHtmlApiFailure(response));
+    }
+
+    if (!response.ok) {
+        throw new Error(`The deployment returned an unexpected ${response.status || "server"} response.`);
+    }
+
+    throw new Error("The deployment returned an unreadable response.");
+}
+
+function describeHtmlApiFailure(response) {
+    if (response.status === 404) {
+        return "The deployment could not find the requested API route. Check the deployed service and start command.";
+    }
+    if (response.status >= 500) {
+        return "The deployment returned a temporary server page instead of API data. The service may still be waking up, restarting, or timing out upstream.";
+    }
+    return "The deployment returned an HTML page instead of API data.";
+}
+
+function toProductMarketMessage(message) {
+    if (!message) {
+        return "Market data could not be refreshed. Try again to request a new snapshot.";
+    }
+    if (message.includes("temporary server page")) {
+        return "The deployment returned a temporary server page while loading market data. Wait a few seconds and try again.";
+    }
+    if (message.includes("could not find the requested API route")) {
+        return "The deployment could not reach the market-data API route. Verify the deployed service configuration.";
+    }
+    if (message.includes("HTML page instead of API data")) {
+        return "The deployment returned an unexpected server page while loading market data. Refresh the page and try again.";
+    }
+    if (message.includes("malformed API data") || message.includes("unreadable response")) {
+        return "The deployment returned an unreadable market-data response. Try again in a moment.";
+    }
+    return "Market data could not be refreshed. Try again to request a new snapshot.";
+}
+
 function toProductBacktestMessage(message) {
     if (!message) {
         return "Backtest could not be completed. Review the inputs and try again.";
+    }
+    if (message.includes("temporary server page")) {
+        return "The deployment returned a temporary server page instead of backtest results. On Render this usually means the service is waking up or the request failed upstream.";
+    }
+    if (message.includes("could not find the requested API route")) {
+        return "The deployment could not reach the backtest API route. Verify the deployed service configuration.";
+    }
+    if (message.includes("HTML page instead of API data")) {
+        return "The deployment returned an unexpected server page instead of backtest results. Refresh the page and try again.";
+    }
+    if (message.includes("malformed API data") || message.includes("unreadable response")) {
+        return "The deployment returned an unreadable backtest response. Try again in a moment.";
     }
     if (message.includes("Select at least 3 stocks")) {
         return message;
